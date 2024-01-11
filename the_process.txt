@@ -1,0 +1,308 @@
+so
+hello to my musings
+
+this is the development log for Jaeger-
+its supposed to be a matchmaking system for games
+
+ive thought a lot about this in my head and i have a rough idea of how it should work, so lets go
+
+there iz server A and server B, lets just call them A and B
+
+the process is NOT decentralized, as much as id like it to be
+
+there is a central api thats responsible for the matchmaking hosted on maybe one of these
+servers or maybe just somewhere in australia it doesnt matter
+
+both A and B are "nodes"
+the central api, lets call it uh, "jaeger" because it sounds cool
+
+each of the nodes communicate to jaeger through redis pubsub rooms
+
+so its like
+
+jaeger has some exposed basic methods to 
+1. add an actor
+2. remove an actor
+thats it
+
+an actor, is a participant in a pubsub room, a party, a player, a team, a side, whatever
+
+
+lets say Joe queues up on server A and wants to be matchmake-n and he has an ELO of 1050
+(the configured base elo is 1000 so you can assume hes pretty bad or new)
+Joe queues up, A pings jaegers add actor method with Joe as the actor
+
+so now jaeger has this one guy just sitting in limbo with a ranking in the queue
+
+ok now
+B has a guy named Jeff with say, 1080 elo queuing up
+
+in reality, its not just one elo. they have two elos. lower and upper elo range
+
+so jeff has 1070-1090 (+- 10 elo) by default
+
+so we have a sorted list of all base elo values, currently its
+
+1. Jeff, 1080, 10, B
+2. Joe, 1050, 30, A
+
+but if we were to sort it by their lowest and their highest values:
+lowest:
+1. Jeff, 1070
+2. Joe, 1020
+
+highest:
+1. Jeff, 1090
+2. Joe, 1080
+
+Joe's +- value (lets call this pool difference) is 20 because theyve been waiting for longer
+it increments by default exponentially, its been say, 15 seconds so it increased by 20
+if it had been 30 seconds, we wouldv increased it by 50 or something
+
+so the more likely they stay in, the more likely they are matched
+
+lets introduce Bob and Janet
+
+1. Jeff, 1080, 10, B
+2. Bob, 1070, 10, B
+2. Joe, 1050, 30, A
+4. Janet, 950, 10, A
+
+lowest:
+1. Jeff, 1070
+2. Bob, 1060
+3. Joe, 1020
+4. Janet, 940
+
+highest:
+1. Jeff, 1090
+2. Bob, 1080
+3. Joe, 1080
+4. Janet, 960
+
+clearly theres some overlap
+Joe, while lower in the rankings, has the same considered high elo as Bob. this is because
+he has been waiting longer, it is considered for the final step of the matching but not now
+
+every tick, we start with the player who has been waiting the longest. in this case, Joe.
+
+NOTE: every 1/20th second, we increase every pool difference by some value, 
+that is not happening here since it is an explanation. this is a seperate thread
+and can update while other tick threads and picking up players
+
+that is fine, the increase is so minimal that it doesnt matter, they can proceed with the
+old values
+
+order of preference:
+1. Joe, 30, 0
+2. Bob, 10, 0
+3. Janet, 10, 0
+4. Jeff, 10, 0
+
+since Janet and Jeff have the same pool difference, we just consider it alphabetically
+
+SO. lets start with little ol Joe'y.
+
+a tick can only make ONE succesful match, that is, the current head of the order of preference
+if a tick fails to find a match for the current head, there are still others waiting, so we 
+deprioritize them by 2 ranks and ends the current tick
+
+imagine it like this the new order of preference:
+1. Bob, 10, 0
+2. Janet, 10, 0
+3. Joe, 30, -2
+4. Jeff, 10, 0
+
+multiple ticks can happen at the same time if a tick fails to complete in 1/20th of a second
+but they will happen with the next head so there is no overlap there
+
+back to the original order of preference. Joe.
+so lets pick Joe up, we use his actor ID to find out his elo amounts
+
+3. Joe, 1050, 30, A
+
+lowest:
+3. Joe, 1020
+
+highest:
+3. Joe, 1080
+
+lets filter out the tables inversely
+
+here are the rest of the actors:
+lowest:
+1. Jeff, 1070
+2. Bob, 1060
+4. Janet, 940
+
+highest:
+1. Jeff, 1090
+2. Bob, 1080
+4. Janet, 960
+
+
+so if their lowest is LESS than joes highest, that means they are within his pool
+joes highest is 1080
+
+all of these fit:
+lowest:
+1. Jeff, 1070
+2. Bob, 1060
+4. Janet, 940
+
+now lets do the same but for the highest:
+joes lowest is 1020
+
+janet does not fit here, because janets highest is lower than joes lowest
+highest:
+1. Jeff, 1090
+2. Bob, 1080
+
+we select all the common elements, in this case being Jeff and Bob.
+
+how does actually works programatically:
+
+we take this table:
+1. Jeff, 1070
+2. Bob, 1060
+4. Janet, 940
+
+we have V, which is 1080
+since this is sorted by elo already, we just find where to begin, which is the 0th index
+
+if there were more elos, like say:
+1. Jack, 1120,
+2. Alex, 1100
+3. Jeff, 1070
+4. Bob, 1060
+5. Janet, 940
+
+we would start with the 2nd index, as in Jeff, because both Jack and Alex lowers are higher than joe
+
+then we only consider the next 30 indexes for this higher/lower operation, so no memory overload 
+or anything
+
+
+now we have a quick list of all the potential candidates, which is unsorted
+name, lowest, highest
+- Jeff, 1070, 1090
+- Bob, 1060, 1080
+
+we can solve for their base elos really quickly and easily instead of looking it up
+- Jeff, 1070, 1090, 1080
+- Bob, 1060, 1080, 1070
+
+now we order our candidate actors by the difference between joe and them
+remember joes base is 1050, while his high may be 1080, he is still an unskilled noob
+
+the actor with the lowest difference is going to be roughly the best match for Joe over here
+taking 1050:
+
+1. Bob, 20
+2. Jeff, 30
+*any overlaps are also sorted again, alphabetically, but this time in inverse so z-a
+just to balance out the last alphabetical sorting
+
+we have now sorted it by the difference which is abs(theirs - joes)
+
+now the matchmaking is actually done, or well, kind of
+
+these are then sent off to willy wonka's chocolate factory, or just the factory
+
+people are people, actors can withdraw at *any* stage, even the last, so its important to have
+a big list of backups, which is why Jeff is here and sorted as #2
+
+if there are multiple ticks running at once, they will statistically have a similar list
+when the final offer is sent out, a candidate is "locked", and subsequently ignored from all
+other lists - the only way to unlock is to withdraw the actor entirely
+
+okay so that tick thread ends, its job is done and it passes the sorted list to the factory
+the "matchmaking" is done, now lets start putting the legos together
+
+each queued actor is connected to a redis pubsub room. this is their waiting room
+
+when the factory recieves a new set of matchmake candidates, it first pings both rooms 
+with a publish message - "are you there" (the person being matched once only at the start)
+the server then automatically responds with a "yes i am and i have not been matched" 
+
+if it times out, or the person being matched fails to, we discard and move on
+
+there is also a heartbeat room running on a seperate thread, heartbeating each server every 30 seconds
+if they fail to respond by the next heartbeat, all of their candidates are wiped from the list
+
+if it responds "yes i am but i cannot for XYZ reasons" the factory discards that match
+
+if it succeeds from both ends, 
+
+the factory now messages both the candidate and person being matched
+(through the pubsub waiting rooms) that they have been succesfully matched
+
+both parties have 20 seconds to send back a confirmation 
+if both parties respond in time, they get cleared from the matchmaking queue
+and are moved from the factory to the arena
+
+the arena takes a look at these two waiting rooms and sends a publish of "success"
+
+now the waiting room was potentially being used by multiple ticks at the same time
+all of the other ticks are told to "screw off" once the "success" message comes in from 
+the arena. 
+
+sounds about right
+
+the arena now creates a new room that it tells both waiting rooms to subscribe to
+
+both of the waiting rooms also remain open for like, 10 more seconds for any hold-out requests
+that need to be told to "screw off"
+
+once both actors have "joined" this new room, that we shall call the challenge room, they
+send an OK
+
+if both do not send OK in 10 seconds, we cancel the matchmaking and return them to the queue
+with the amount of time that has passed since they were initially considered (timestamps)
+
+now the arena sends back an OK once all parties confirm and the battle officially begins
+
+from here the arena just keeps them open on the side, it returns the thread once the battle ends
+
+now both actors start by sending their teams, their data, etc etc
+
+the servers accept and validate this data to their own needs and requirements
+
+at any point either server can throw a ValidationError which the arena picks up on
+
+the arena does nothing on its own and simply logs the ValidationError (or TimeoutError) for someone to check
+on later, it closes the thread and *neither party loses ELO*
+
+__now for the mod part__
+
+the battle proceeds as normal, each side has a ControllableBattleActor which is a fake
+imitation of all the messages being sent through the publish
+
+each message is ID'd with its respective turn number, if there is ever one out of turn
+we request for the last turn and quickly fast track that
+
+if there are more than 3 turns out of order the server throws a ExceededTurnOrderError
+
+an ExceededTurnOrderError does NOT cause the battle to automatically close on its own
+but it will be logged and if there are multiple (say 3), then it will be considered a TimeoutError
+
+once the battle wraps up to an end, the servers just say BATTLE OVER or something 
+
+the arena then says OK within 10 seconds (if the arena does not, the server logs the error 
+and battle log for an admin to check out later)
+
+then it publishes their old and new ELOs, which the servers take then leave the pubsub room
+
+and thats a ranked battle! the end c:
+
+..
+
+just kidding this continues forever
+
+
+
+
+
+
+
+
