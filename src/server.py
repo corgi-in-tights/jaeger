@@ -5,7 +5,7 @@ import redis
 import websockets
 from websockets import WebSocketServerProtocol
 
-from config.models import Message, TYPE_KEY, ID_KEY
+from config.models import Message, TYPE_KEY, ID_KEY, DESCRIPTION_KEY, STATUS_KEY
 from config.settings import SOCKET_SETTINGS
 from events import queue_actor, dequeue_actor, remove_actor
 
@@ -20,21 +20,18 @@ MESSAGE_TYPES = {
 def finish_type(t):
 	return f'finish_{t}'
 
-def get_address(websocket):
-	return f'{websocket.remote_address[0]}:{websocket.remote_address[1]}'
-
 
 # guranteed to have a `_type` and `_id`
 async def parse_message(websocket: WebSocketServerProtocol, message: Message):
 	if (message._type in MESSAGE_TYPES):
-		result = await MESSAGE_TYPES[message._type](message)
+		result = await MESSAGE_TYPES[message._type](websocket, message)
 	else:
 		result = 404
 
 	to_package = {
-		'type': finish_type(message._type),
-		'_id': str(message._id),
-		'status': result if result else 400
+		TYPE_KEY: finish_type(message._type),
+		ID_KEY: str(message._id),
+		STATUS_KEY: result if result else 400
 	}
 
 	await send_message(websocket, to_package)
@@ -60,28 +57,16 @@ async def handle_message(websocket: WebSocketServerProtocol, message: Message):
 		await send_error(websocket, 'invalid_json')
 
 async def send_error(websocket: WebSocketServerProtocol, description: str, **kwargs):
-	await send_message(websocket, { 'type': 'error', 'description': description, **kwargs })
+	await send_message(websocket, { TYPE_KEY: 'error', DESCRIPTION_KEY: description, **kwargs })
 
 async def send_message(websocket: WebSocketServerProtocol, to_package: dict):
 	await websocket.send(json.dumps(to_package))
 
-c = []
+# c = []
 
 async def consumer_handler(websocket: WebSocketServerProtocol, path: str):
 	print (f'Connecting client from {websocket.remote_address} to server at {websocket.local_address}')
-	c.append(websocket)
+	# c.append(websocket)
 	async for message in websocket:
-		print (c)
+		# print (c)
 		await handle_message(websocket, message)
-
-
-async def main():
-	# specify ping_interval, ping_timeout, close_timeout, max_size, max_queue, read_limit, and write_limit in config
-	server = await websockets.serve(
-		consumer_handler, **SOCKET_SETTINGS
-	)
-	
-	await server.wait_closed()
-
-if __name__ == '__main__':
-	asyncio.run(main())

@@ -8,3 +8,5 @@ SOCKET_SETTINGS = {
     'host': 'localhost',
     'port': 8765,
 }
+
+MATCH_RETRY_MILLISECONDS = 1000

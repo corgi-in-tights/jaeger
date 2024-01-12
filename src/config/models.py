@@ -9,6 +9,10 @@ class Message:
         self._id = _id
         self._type = _type
         self.data = kwargs
+    
+
 
 TYPE_KEY = 'type'
 ID_KEY = 'id'
+DESCRIPTION_KEY = 'description'
+STATUS_KEY = 'status'
