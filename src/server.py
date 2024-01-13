@@ -1,16 +1,15 @@
 import json
 from websockets import WebSocketServerProtocol
 
-from config.models import QueueActorMessageType, DequeueActorMessageType, RemoveActorMessageType, ErrorResponse, AcceptResponse
+from config.models import QueueActorMessageType, DequeueActorMessageType, ErrorResponse
 
-from callbacks import queue_actor, dequeue_actor, remove_actor
+from callbacks import queue_actor, dequeue_actor
 
 from utils.socket_utils import send_response, has_type_and_id, convert_package_types
 
 MESSAGE_TYPES = [
 	QueueActorMessageType(queue_actor),
-	DequeueActorMessageType(dequeue_actor),
-	RemoveActorMessageType(remove_actor)
+	DequeueActorMessageType(dequeue_actor)
 ]
 
 

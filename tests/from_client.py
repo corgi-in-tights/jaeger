@@ -10,7 +10,7 @@ u = uuid4()
 
 async def response_test(ip):
     async with websockets.connect(ip) as socket:
-        msg = json.dumps({"_type": "queue_actor", "_id": str(u), "data": {}})
+        msg = json.dumps({"_type": "queue_actor", "_id": str(u), "data": {"elo": 1000}})
         await socket.send(msg)
         return await socket.recv()
 

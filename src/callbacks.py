@@ -1,69 +1,73 @@
 import asyncio
-from config.models import AcceptResponse, FailResponse
+from config.models import AcceptResponse, FailResponse, Actor
 from config.settings import MAX_QUEUE_SIZE
 from uuid import UUID
 from rq import Queue, Worker
 from redis import Redis
 from functools import partial
+from queue import Queue
+from typing import List
+
+from config.settings import ACTIVE_MATCH_RULE, ACTIVE_SORT_RULE, SORTED_SET_KEY
 
 
+actor_queue = Queue(maxsize=MAX_QUEUE_SIZE)
+uuid_socket_map = {}
 
-actor_queue = []
+redis_conn = Redis(host='localhost', port=6379, decode_responses=True)
+redis_conn.delete(SORTED_SET_KEY)
 
 async def queue_actor(websocket, _id: UUID, _type: str, data: dict) -> AcceptResponse:
-	if (len(actor_queue) > MAX_QUEUE_SIZE):
+	if (actor_queue.full()):
 		return FailResponse('overflow', _id)
 	
 	print ('queuing actor', _id)
 
-	# asyncio.create_task(add_to_redis(websocket, _id, data))
-	 
-	# Enqueue a job
-	actor_queue.append(partial(attempt_match, websocket=websocket, _id=_id, data=data))
+	actor = Actor(websocket=websocket, _id=_id, data=data, retry_index=0)
+	await add_actor_to_queue(actor)
 
+	uuid_socket_map[_id] = websocket
+
+	k = ACTIVE_SORT_RULE.get_by_sort_key(actor)
+	if (not k):
+		return FailResponse('invalid_values', _id)
+		
+	redis_conn.zadd(SORTED_SET_KEY, {str(_id): k})
 
 	return AcceptResponse(_type, _id)
 
 
-async def add_to_redis(websocket, _id: UUID, data: dict):
-	# add to queue
-	# add to elo sorted list
-	pass
-
-
+async def add_actor_to_queue(actor: Actor):
+	actor_queue.put(
+		partial(attempt_match, actor=actor),
+		block = True,
+		timeout = 5
+	)
 
 async def dequeue_actor(websocket, _id: UUID, _type: str) -> AcceptResponse:
 	return AcceptResponse(_type, 200, _id)
 
-async def remove_actor(websocket, _id: UUID, _type: str) -> AcceptResponse:
-	return AcceptResponse(_type, 200, _id)
-
 async def process_queue_head():
-	print ('heartbeat')
-	if (len(actor_queue) > 1):
-		print ('yes')
-		await actor_queue.pop(0)()
+	if (actor_queue.qsize() > 1):
+		f = actor_queue.get(block=True, timeout=5)
+		await f()
 
 
-async def attempt_match(websocket, _id: UUID, data: dict):
-	print ("I AM ATTEMPTING A MATCH FOR", _id)
-	# get all actors from the redis queue
-	# the first actor in the queue will be the one waiting the longest
-	# so we pop them off
-
+async def attempt_match(actor: Actor):
+	print ("I AM ATTEMPTING A MATCH FOR", actor._id)
 	# the actor has an "elo block" and a "retry attempt" which defines their range
 	# (custom INITIATE rule is used for this)
+
+	a = [(UUID(_id), score) for _id, score in redis_conn.zrange(SORTED_SET_KEY, 0, -1, withscores=True)]
+	prefiltered = ACTIVE_MATCH_RULE.prefilter(actor, a)
+	candidates = ACTIVE_MATCH_RULE.get_candidates(actor, prefiltered, 2)
 	
-	# we quickly iterate up and down picking a maximum of N other actors
-	
-
-	# we now do some comparisons to pick out an ordered list of N potential candidates
-	# (custom MATCH rule is used for this)
+	await match_candidates(actor, candidates)
 
 
 
 
-async def match_candidates(actor, candidates):
+async def match_candidates(actor: Actor, candidates: List[UUID]):
 	# now we confirm which all of the candidate actors are online
 	# by sending a ConfirmationResponse to their websockets
 	# and expecting back a 'yes'

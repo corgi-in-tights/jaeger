@@ -30,6 +30,9 @@ class DequeueActorMessageType(BaseMessageType):
         super().__init__('dequeue_actor', callback)
 
 
-class RemoveActorMessageType(BaseMessageType):
-    def __init__(self, callback) -> None:
-        super().__init__('remove_actor', callback)
+class Actor:
+    def __init__(self, _id, websocket, retry_index, data) -> None:
+        self._id = _id
+        self.websocket = websocket
+        self.retry_index = retry_index
+        self.data = data
