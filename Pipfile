@@ -11,6 +11,7 @@ pyopenssl = "*"
 flask-talisman = "*"
 websockets = "*"
 asyncio = "*"
+rq = "*"
 
 [dev-packages]
 

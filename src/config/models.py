@@ -1,18 +1,35 @@
-class Actor:
-    def __init__(self, _id, server, **kwargs) -> None:
-        self._id = _id
-        self.server = server
-        self.data = kwargs
+from config.base import BaseMessageType, BaseResponse, DATA_KEY
 
-class Message:
-    def __init__(self, _id, _type, **kwargs) -> None:
-        self._id = _id
-        self._type = _type
-        self.data = kwargs
+class AcceptResponse(BaseResponse):
+    def __init__(self, description, _id=None) -> None:
+        super().__init__('accept', description, _id=_id)
     
+class ErrorResponse(BaseResponse):
+    def __init__(self, description, _id=None) -> None:
+        super().__init__('error', description, _id=_id)
+
+    
+class FailResponse(BaseResponse):
+    def __init__(self, description, _id=None) -> None:
+        super().__init__('fail', description, _id=_id)
 
 
-TYPE_KEY = 'type'
-ID_KEY = 'id'
-DESCRIPTION_KEY = 'description'
-STATUS_KEY = 'status'
+class QueueActorMessageType(BaseMessageType):
+    _type = 'queue_actor'
+
+    def __init__(self, callback) -> None:
+        types = {
+            DATA_KEY: dict
+        }
+
+        super().__init__('queue_actor', callback, types=types)
+
+
+class DequeueActorMessageType(BaseMessageType):
+    def __init__(self, callback) -> None:
+        super().__init__('dequeue_actor', callback)
+
+
+class RemoveActorMessageType(BaseMessageType):
+    def __init__(self, callback) -> None:
+        super().__init__('remove_actor', callback)
