@@ -1,7 +1,9 @@
 from websockets import WebSocketServerProtocol
 from config.base import TYPE_KEY, ID_KEY, BaseMessageType, BaseResponse
+from config.models import ConfirmMatchResponse
 import json
 from typing import Optional
+from uuid import UUID
 
 
 async def send_response(websocket: WebSocketServerProtocol, response: BaseResponse):
@@ -17,7 +19,8 @@ def convert_package_types(package: dict, message_type: BaseMessageType) -> Optio
 			return message_type.convert_package_types(package)
 	return
 
-
+async def send_confirmation(websocket: WebSocketServerProtocol, _id: UUID):
+	await send_response(websocket, ConfirmMatchResponse(_id))
 
 
 

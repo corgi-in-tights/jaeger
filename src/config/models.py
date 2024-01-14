@@ -8,10 +8,14 @@ class ErrorResponse(BaseResponse):
     def __init__(self, description, _id=None) -> None:
         super().__init__('error', description, _id=_id)
 
-    
 class FailResponse(BaseResponse):
     def __init__(self, description, _id=None) -> None:
         super().__init__('fail', description, _id=_id)
+
+class ConfirmMatchResponse(BaseResponse):
+    def __init__(self, _id=None) -> None:
+        super().__init__('confirm', 'match', _id=_id)
+
 
 
 class QueueActorMessageType(BaseMessageType):
@@ -28,6 +32,12 @@ class QueueActorMessageType(BaseMessageType):
 class DequeueActorMessageType(BaseMessageType):
     def __init__(self, callback) -> None:
         super().__init__('dequeue_actor', callback)
+
+
+class ConfirmMatchMessageType(BaseMessageType):
+    def __init__(self, callback) -> None:
+        super().__init__('confirm_match', callback)
+
 
 
 class Actor:

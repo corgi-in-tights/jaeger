@@ -1,15 +1,16 @@
 import json
 from websockets import WebSocketServerProtocol
 
-from config.models import QueueActorMessageType, DequeueActorMessageType, ErrorResponse
+from config.models import QueueActorMessageType, DequeueActorMessageType, ErrorResponse, ConfirmMatchMessageType
 
-from callbacks import queue_actor, dequeue_actor
+from callbacks import queue_actor, dequeue_actor, confirm_match
 
 from utils.socket_utils import send_response, has_type_and_id, convert_package_types
 
 MESSAGE_TYPES = [
 	QueueActorMessageType(queue_actor),
-	DequeueActorMessageType(dequeue_actor)
+	DequeueActorMessageType(dequeue_actor),
+	ConfirmMatchMessageType(dequeue_actor)
 ]
 
 
